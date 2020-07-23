@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 
-MNLI_PATH = "multinli_1.0_train.jsonl"
-GLOVE_PATH = "embeddings/glove.6B.50d.txt"
+MNLI_PATH = "/Users/janak/Documents/GitHub/mnli/utils/multinli_1.0_train.jsonl"
+GLOVE_PATH = "/Users/janak/Documents/GitHub/mnli/utils/embeddings/glove.6B.50d.txt"
 LABEL_TO_INT = {'contradiction':1, 'entailment':2, 'neutral':3}
 
 def load_mnli():
