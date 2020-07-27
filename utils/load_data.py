@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-MNLI_PATH = "/home/ndg/users/jkurre/mnli/utils/multinli_1.0_train.jsonl"
+MNLI_PATH = "/home/ndg/users/jkurre/mnli/utils/multinli_1.0_dev_mismatched.jsonl"
 GLOVE_PATH = "/home/ndg/users/jkurre/mnli/utils/embeddings/glove.6B.50d.txt"
 LABEL_TO_INT = {'contradiction':1, 'entailment':2, 'neutral':3}
 
