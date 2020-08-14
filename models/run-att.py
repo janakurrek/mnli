@@ -9,57 +9,10 @@ import torch.optim as O
 import torch.nn.functional as F
 from torchtext import data, vocab, datasets
 
-class Parameters():
-    def __init__(self):
-        # gpu
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        # word vectors
-        self.embed_size = 50
-        self.word_vectors = True
-        self.glove_path = '/home/ndg/users/jkurre/mnli/utils/embeddings/glove.6B.50d.txt'
-        # model configs
-        self.hidden_size = 1024
-        self.batch_size = 32
-        self.input_size = 76790
-        self.output_size = 4
-        self.n_layers = 2
-        self.n_cells = 4
-        self.dropout = 0.5
-        # training
-        self.epochs = 40
-        self.learning_rate = 0.0001
-        self.outpath = '/home/ndg/users/jkurre/mnli/models/bilstm_revised_attention_40epochs.pt'
-        self.outfile = '/home/ndg/users/jkurre/mnli/models/outputs/bilstm_with_attention_40epochs.txt'
-        # load from scratch
-        self.load = False
-        self.loadpath = '/home/ndg/users/jkurre/mnli/models/bilstm_revised_attention_40epochs.pt'
+import sys
+sys.path.append('..')
 
-class Attention(nn.Module):
-    def __init__(self, hidden_size):
-        super(Attention, self).__init__()
-        
-        self.hidden_size = hidden_size
-        self.attn = nn.Linear(self.hidden_size * 4, hidden_size)
-        self.v = nn.Parameter(torch.rand(hidden_size))
-        stdv = 1. / math.sqrt(self.v.size(0))
-        self.v.data.uniform_(-stdv, stdv)
-
-    def forward(self, hidden, encoder_outputs):
-        hidden = hidden.reshape((1, hidden.shape[1], hidden.shape[2] * 2))
-        timestep = encoder_outputs.size(0)
-        h = hidden.repeat(timestep, 1, 1).transpose(0, 1)
-        encoder_outputs = encoder_outputs.transpose(0, 1)  # [B*T*H]
-        attn_energies = self.score(h, encoder_outputs)
-        return F.softmax(attn_energies, dim=1).unsqueeze(1)
-
-    def score(self, hidden, encoder_outputs):
-        # [B*T*2H]->[B*T*H]
-        catted = torch.cat([hidden, encoder_outputs], 2)
-        energy = F.relu(self.attn(catted))
-        energy = energy.transpose(1, 2)  # [B*H*T]
-        v = self.v.repeat(encoder_outputs.size(0), 1).unsqueeze(1)  # [B*1*H]
-        energy = torch.bmm(v, energy)  # [B*1*T]
-        return energy.squeeze(1)  # [B*T]
+from params import Parameters
     
 class Attention(nn.Module):
     def __init__(self, hidden_size):
@@ -124,6 +77,9 @@ class MultiNLIModel(nn.Module):
         return context
         
     def forward(self, pair):
+        # batch size discrepancy
+        if self.batch_size != pair.batch_size:
+            self.batch_size = pair.batch_size
         
         # seq_length, batch_size, embed_size
         prem_embed = self.dropout(self.embed(pair.premise))
@@ -155,7 +111,7 @@ if __name__ == '__main__':
     )
 
     train, val, test = datasets.MultiNLI.splits(
-        text_field=inputs,
+            text_field=inputs,
         label_field=answers
         )
 
@@ -176,7 +132,7 @@ if __name__ == '__main__':
         (train, val, test), batch_size=params.batch_size, device=params.device)
     
     # load or instantiate model
-    if params.load:
+    if params.load_model:
         model = torch.load(params.loadpath)
     else:
         model = MultiNLIModel(params.input_size, params.output_size, params.embed_size, params.device,
@@ -245,7 +201,8 @@ if __name__ == '__main__':
 
             acc_loss.append((loss.item(), n_correct/n_total*100))
 
-    torch.save(model, params.outpath)
+    if params.save_model:
+        torch.save(model, params.outpath)
 
-    with open(params.outfile, "w") as output:
-        output.write(str(acc_loss))
+        with open(params.outfile, "w") as output:
+            output.write(str(acc_loss))

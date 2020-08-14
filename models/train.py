@@ -1,95 +1,11 @@
-import time
-import math
-import torch
-import os
-import matplotlib.pyplot as plt
-
-from torch import nn
-import torch.optim as O
-import torch.nn.functional as F
+from bilstm_att import MultiNLIModel
 from torchtext import data, vocab, datasets
 
-class Parameters():
-    def __init__(self):
-        # gpu
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        # word vectors
-        self.embed_size = 50
-        self.word_vectors = True
-        self.glove_path = '/home/ndg/users/jkurre/mnli/utils/embeddings/glove.6B.50d.txt'
-        # model configs
-        self.hidden_size = 1024
-        self.batch_size = 32
-        self.input_size = 76790
-        self.output_size = 4
-        self.n_layers = 2
-        self.n_cells = 4
-        self.dropout = 0.5
-        # training
-        self.epochs = 15
-        self.learning_rate = 0.0001
-        self.outpath = '/home/ndg/users/jkurre/mnli/models/bilstm_revised.pt' # _onehot.pt
+import sys
+sys.path.append('..')
 
-class MultiNLIModel(nn.Module):
-    def __init__(self, input_size, output_size, embed_size, device,
-                 hidden_size, batch_size, dropout, n_layers, n_cells):
-        
-        super(MultiNLIModel, self).__init__()
-        
-        self.device = device
-        self.batch_size = batch_size
-        self.hidden_size = hidden_size
-        self.n_cells = n_cells
-        
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
-        self.embed = nn.Embedding(input_size, embed_size)
-        self.lstm = nn.LSTM(embed_size, hidden_size,
-                            num_layers=n_layers, dropout=dropout, 
-                            bidirectional=True)
-        self.fc_hidden1 = nn.Linear(hidden_size * 2, batch_size, bias=False)
-        self.fc_hidden2 = nn.Linear(batch_size, hidden_size * 2, bias=False)
-        self.fc_hidden3 = nn.Linear(hidden_size * 2,  output_size, bias=False)
-    
-    def encode(self, embed):
-        state_shape = self.n_cells, self.batch_size, self.hidden_size
-        h0 = c0 = embed.new_zeros(state_shape)
-        outputs, (ht, ct) = self.lstm(embed, (h0, c0))
-        return ht[-2:].transpose(0, 1).contiguous().view(self.batch_size, -1)
-    
-    def forward(self, pair):
-        
-        # conditionally update batch size in linear layers
-        if pair.batch_size != self.batch_size:
-            self.batch_size = pair.batch_size
-            self.fc_hidden1 = nn.Linear(self.hidden_size * 2, pair.batch_size, bias=False).to(self.device)
-            self.fc_hidden2 = nn.Linear(pair.batch_size, self.hidden_size * 2, bias=False).to(self.device)
+from params import Parameters
 
-        # seq_length, batch_size, embed_size
-        prem_embed = self.embed(pair.premise)
-        hypo_embed = self.embed(pair.hypothesis)
-        
-        # fix word embeddings
-        prem_embed.detach()
-        hypo_embed.detach()
-        
-        # batch_size, hidden_size * 2
-        prem_embed = self.encode(prem_embed)
-        hypo_embed = self.encode(hypo_embed)
-        
-        # batch_size, batch_size
-        prem_embed = self.relu(self.fc_hidden1(prem_embed))
-        hypo_embed = self.relu(self.fc_hidden1(hypo_embed))
-        
-        # batch_size, hidden_size * 2
-        pair_embed = prem_embed - hypo_embed
-        pair_embed = self.relu(self.fc_hidden2(pair_embed))
-        
-        # hidden_size * 2, output_size
-        pair_output = self.relu(self.fc_hidden3(pair_embed))
-        
-        return pair_output
-    
 if __name__ == '__main__':   
     params = Parameters()
     
@@ -123,11 +39,12 @@ if __name__ == '__main__':
     train_iterator, valid_iterator, test_iterator = data.BucketIterator.splits(
     (train, val, test), batch_size=params.batch_size, device=params.device)
     
-    model = MultiNLIModel(params.input_size, params.output_size, params.embed_size, params.device,
+    if params.load_model:
+        model = torch.load(params.loadpath)
+    else:
+        model = MultiNLIModel(params.input_size, params.output_size, params.embed_size, params.device,
                       params.hidden_size, params.batch_size, params.dropout, params.n_layers, params.n_cells).to(params.device)
     
-    # https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb
-
     criterion = nn.CrossEntropyLoss()
     opt = O.Adam(model.parameters(), lr=params.learning_rate)
 
@@ -186,4 +103,8 @@ if __name__ == '__main__':
                     epoch, iterations, 1+batch_idx, len(train_iterator),
                     100. * (1+batch_idx) / len(train_iterator), loss.item(), ' '*8, n_correct/n_total*100, ' '*12))
 
-    torch.save(model, params.outpath)
+    if params.save_model:
+        torch.save(model, params.outpath)
+
+        with open(params.outfile, "w") as output:
+            output.write(str(acc_loss))
